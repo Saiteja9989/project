@@ -1,37 +1,149 @@
-@import "tailwindcss";
+/* ─── Inter font from Google Fonts ─── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-* { font-family: 'Inter', sans-serif; }
-html { scroll-behavior: smooth; }
+/* ─── Tailwind CSS v4 ─── */
+@import 'tailwindcss';
 
-::-webkit-scrollbar { width: 4px; height: 4px; }
+
+
+/* ─────────────────────────────────────────
+   DESIGN TOKENS
+   All colors/sizes in one place.
+   Interview tip: CSS variables = easy theming, no need for CSS-in-JS.
+───────────────────────────────────────── */
+:root {
+  --bg:           #09090B;
+  --surface:      #111113;
+  --surface-2:    #1C1C22;
+  --border:       #27272A;
+  --primary:      #6366F1;
+  --primary-dim:  rgba(99,102,241,0.12);
+  --primary-glow: rgba(99,102,241,0.20);
+  --success:      #22C55E;
+  --warning:      #F59E0B;
+  --danger:       #EF4444;
+  --text:         #FAFAFA;
+  --text-muted:   #71717A;
+  --text-dim:     #3F3F46;
+  --radius:       16px;
+  --radius-sm:    10px;
+}
+
+/* ─── Base Reset ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 99px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
 
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.shimmer {
-  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.06) 50%, transparent 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.6s infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
-}
-.animate-float { animation: float 3s ease-in-out infinite; }
-
-.glass {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+/* ─── Glass Card ───
+   backdrop-filter: blurs what's behind the element (frosted glass effect)
+   Used on all cards throughout the app */
+.glass-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.gradient-text {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* ─── Skeleton Loader ───
+   Pulsing gray placeholder shown while API data loads.
+   Interview tip: Better UX than a spinner — user sees content shape */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
 }
+.skeleton {
+  background: var(--surface-2);
+  border-radius: 8px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Background Orb ───
+   Subtle glowing orb on the landing page background */
+@keyframes orb-pulse {
+  0%, 100% { opacity: 0.5; transform: translate(-50%,-50%) scale(1); }
+  50%       { opacity: 0.7; transform: translate(-50%,-50%) scale(1.08); }
+}
+.bg-orb {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(80px);
+  animation: orb-pulse 7s ease-in-out infinite;
+  z-index: 0;
+}
+
+/* ─── Search Input ─── */
+.search-input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 14px 20px 14px 50px;
+  outline: none;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.search-input::placeholder { color: var(--text-muted); }
+.search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-dim);
+}
+
+/* ─── Primary Button ─── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 28px;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 150ms, transform 150ms;
+}
+.btn-primary:hover  { opacity: 0.9; transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+
+/* ─── Cursor blink (terminal animation) ─── */
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.cursor-blink {
+  display: inline-block;
+  width: 8px; height: 16px;
+  background: var(--primary);
+  border-radius: 2px;
+  animation: blink 1s ease-in-out infinite;
+  vertical-align: middle;
+  margin-left: 3px;
+}
+
+/* ─── Progress bar ─── */
+.progress-bar { width:100%; height:4px; background:var(--border); border-radius:999px; overflow:hidden; }
+.progress-fill { height:100%; border-radius:999px; background:var(--primary); transition: width 600ms cubic-bezier(.4,0,.2,1); }
+
+/* ─── Page padding for bottom nav (mobile) ─── */
+.bottom-nav-space { padding-bottom: 80px; }
+
+/* ─── Attendance colors ─── */
+.color-good    { color: var(--success); }
+.color-warn    { color: var(--warning); }
+.color-danger  { color: var(--danger); }

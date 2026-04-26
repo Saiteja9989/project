@@ -1,50 +1,87 @@
 import React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Moon, Search, Sun, Zap } from 'lucide-react';
-import { useDarkMode } from './DarkModeContext';
+import { useNavigate } from 'react-router-dom';
 import Cookies from 'js-cookie';
 
-export default function Navbar({ setToken }) {
+/**
+ * NAVBAR — Top bar for all authenticated pages
+ *
+ * Props:
+ *  token    — current JWT (to verify user is logged in)
+ *  setToken — clears token on logout
+ *
+ * Interview tip: Putting logout in the navbar means every page
+ * gets it for free — single responsibility, no repetition.
+ */
+export default function Navbar({ token, setToken }) {
   const navigate = useNavigate();
-  const { darkMode, toggleDarkMode } = useDarkMode();
 
-  const handleSearchClick = () => {
+  const handleLogout = () => {
+    // Clear cookies and state, return to search
     Cookies.remove('token');
+    Cookies.remove('refresh_token');
     if (setToken) setToken(null);
-    navigate('/search');
+    navigate('/');
   };
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 glass border-b transition-colors duration-300 ${
-      darkMode ? 'bg-gray-950/80 border-white/5' : 'bg-white/80 border-gray-200/60'
-    }`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className={`p-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${
-                darkMode ? 'hover:bg-white/8 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                <Zap className="w-4 h-4 text-white" />
-              </div>
-              <span className={`font-bold text-sm tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>SPECTRA</span>
-            </Link>
+    <nav style={{
+      position: 'sticky',
+      top: 0,
+      zIndex: 50,
+      background: 'rgba(9,9,11,0.85)',
+      backdropFilter: 'blur(16px)',
+      borderBottom: '1px solid var(--border)',
+      padding: '0 16px',
+    }}>
+      <div style={{
+        maxWidth: '600px',
+        margin: '0 auto',
+        height: '52px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+
+        {/* Logo */}
+        <div
+          onClick={() => navigate('/dashboard')}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+        >
+          {/* Spark icon */}
+          <div style={{
+            width: '28px', height: '28px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, var(--primary) 0%, #8B5CF6 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ color: '#fff', fontSize: '0.875rem' }}>✦</span>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={handleSearchClick} className={`p-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${darkMode ? 'hover:bg-white/8 text-gray-400 hover:text-indigo-400' : 'hover:bg-gray-100 text-gray-500 hover:text-indigo-600'}`}>
-              <Search className="h-4 w-4" />
-            </button>
-            <button onClick={toggleDarkMode} className={`p-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 ${darkMode ? 'hover:bg-white/8 text-gray-400 hover:text-yellow-400' : 'hover:bg-gray-100 text-gray-500 hover:text-indigo-600'}`}>
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-          </div>
+          <span style={{ fontWeight: 800, fontSize: '0.9375rem', letterSpacing: '-0.3px', color: 'var(--text)' }}>
+            Spectra
+          </span>
         </div>
+
+        {/* Logout button — logs student out and goes back to search */}
+        <button
+          onClick={handleLogout}
+          title="Switch student"
+          style={{
+            background: 'none',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '6px 12px',
+            color: 'var(--text-muted)',
+            fontSize: '0.75rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+            transition: 'color 150ms, border-color 150ms',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'var(--text-muted)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+        >
+          Switch →
+        </button>
+
       </div>
     </nav>
   );

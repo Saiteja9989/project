@@ -16,6 +16,7 @@ const externalexam = require('./routes/externalres');
 const netraqr = require('./routes/gethallticketnumfromnetraid');
 const fetchqr = require('./routes/fetchqr');
 const browserlogin = require('./routes/puppeteerlogin');
+require('./models/refreshToken'); // Register RefreshToken model
 // const getSubjects = require('./routes/getSemSubjects');
 
 const app = express();

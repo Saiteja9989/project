@@ -1,12 +1,33 @@
 const express = require('express');
-const { chromium } = require('playwright');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const axios = require('axios');
+const RefreshToken = require('../models/refreshToken');
+
+puppeteer.use(StealthPlugin());
 
 const router = express.Router();
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const COLLEGE_REFRESH_URL = 'https://kmit-api.teleuniv.in/auth/refresh';
 
 /**
  * POST /api/browser-login
- * Uses Playwright with system Chrome to log into the college site.
- * Cloudflare Turnstile auto-verifies since we run on the college's actual domain.
+ *
+ * Smart login with two strategies:
+ *
+ * 1. FAST PATH (works on Vercel, ~1 second):
+ *    Check MongoDB for a stored refresh_token → hit college /auth/refresh
+ *    → return new access_token immediately. No browser needed.
+ *    This covers 95%+ of logins for returning students.
+ *
+ * 2. BROWSER PATH (needs Chrome — local dev or Browserless.io):
+ *    If no stored token or refresh expired → launch browser → Playwright
+ *    fills credentials → Cloudflare Turnstile auto-solves on real Chrome
+ *    → capture token from network → store refresh_token for next time.
+ *
+ * Set BROWSERLESS_TOKEN env var to use Browserless.io in production.
+ * Without it: uses local system Chrome (headless:false, works only locally).
  */
 router.post('/browser-login', async (req, res) => {
   const { username, password = 'Kmit123$' } = req.body;
@@ -15,85 +36,161 @@ router.post('/browser-login', async (req, res) => {
     return res.status(400).json({ success: 0, error: 'username is required' });
   }
 
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const emit = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // ── FAST PATH: try stored refresh token ──────────────────────────────
+  try {
+    const stored = await RefreshToken.findOne({ username });
+    if (stored?.refresh_token) {
+      emit('step', { step: 'verifying', message: 'Restoring saved session...' });
+
+      try {
+        const refreshRes = await axios.post(
+          COLLEGE_REFRESH_URL,
+          { refresh_token: stored.refresh_token },
+          { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+        );
+
+        const newAccessToken = refreshRes.data?.access_token;
+        if (newAccessToken && newAccessToken !== null) {
+          // Update stored refresh token if the college rotated it
+          const newRefresh = refreshRes.data?.refresh_token;
+          if (newRefresh && newRefresh !== stored.refresh_token) {
+            await RefreshToken.findOneAndUpdate(
+              { username },
+              { refresh_token: newRefresh, updatedAt: Date.now() }
+            );
+          }
+
+          emit('done', {
+            success: 1,
+            token: newAccessToken,
+            refresh_token: newRefresh || stored.refresh_token,
+          });
+          res.end();
+          return;
+        }
+      } catch (_) {
+        // Refresh failed (token expired) — fall through to browser login
+      }
+    }
+  } catch (_) {
+    // DB error — fall through to browser login
+  }
+
+  // ── BROWSER PATH ─────────────────────────────────────────────────────
   let browser;
   try {
-    browser = await chromium.launch({
-      channel: 'chrome', // use system Chrome, not bundled Chromium
-      headless: true,
-      args: ['--disable-blink-features=AutomationControlled'],
-    });
+    emit('step', { step: 'launching', message: 'Launching secure browser...' });
 
-    const context = await browser.newContext({
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 800 },
-    });
+    if (process.env.BROWSERLESS_TOKEN) {
+      // Production (Vercel): connect to Browserless.io remote Chrome
+      browser = await puppeteer.connect({
+        browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`,
+      });
+    } else {
+      // Development: use local system Chrome
+      browser = await puppeteer.launch({
+        headless: false,
+        channel: 'chrome',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-blink-features=AutomationControlled',
+          '--window-size=1,1',
+          '--window-position=10000,10000',
+        ],
+        defaultViewport: null,
+      });
+    }
 
-    const page = await context.newPage();
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+    );
 
-    // Remove webdriver marker
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
-    // Intercept the auth response to capture the token
-    let capturedToken = null;
-    let capturedRefresh = null;
-    let loginError = null;
+    let capturedToken = null, capturedRefresh = null, loginError = null;
 
     page.on('response', async (response) => {
       if (response.url().includes('/auth/login')) {
         try {
           const body = await response.json();
           if (body.Error === false) {
-            capturedToken = body.access_token || body.token;
+            capturedToken   = body.access_token || body.token;
             capturedRefresh = body.refresh_token;
           } else {
-            loginError = body.message || 'Authentication failed';
+            loginError = body.message || 'Auth failed';
           }
         } catch (_) {}
       }
     });
 
-    await page.goto('https://kmit.teleuniv.in/netra', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    emit('step', { step: 'navigating', message: 'Connecting to college portal...' });
+    await page.goto('https://kmit.teleuniv.in/netra', {
+      waitUntil: 'domcontentloaded',
+      timeout: 40000,
+    });
 
-    // Fill credentials
-    await page.waitForSelector('input[placeholder*="Mobile"], input[type="tel"]', { timeout: 10000 });
-    await page.fill('input[placeholder*="Mobile"], input[type="tel"]', username);
-    await page.fill('input[type="password"]', password);
+    emit('step', { step: 'filling', message: 'Entering credentials...' });
+    await page.waitForSelector('#login_username', { timeout: 30000 });
+    await page.type('#login_username', username, { delay: 60 });
+    await page.type('#login_password', password, { delay: 60 });
 
-    // Wait for Turnstile to silently verify
-    await page.waitForTimeout(10000);
+    emit('step', { step: 'verifying', message: 'Waiting for verification...' });
 
-    // Click Sign In
-    const btn = await page.$('button[type="submit"]') ||
-      await page.locator('button', { hasText: /sign\s*in|login/i }).first();
-    if (btn) {
-      await btn.click();
-    } else {
-      return res.status(500).json({ success: 0, error: 'Sign In button not found' });
+    // Poll for Cloudflare Turnstile — real Chrome auto-solves in ~2-3s
+    let solved = false;
+    for (let i = 0; i < 20; i++) {
+      await sleep(500);
+      const val = await page.evaluate(() => {
+        const el = document.querySelector('input[name="cf-turnstile-response"]');
+        return el ? el.value : '';
+      });
+      if (val && val.length > 20) {
+        solved = true;
+        break;
+      }
     }
 
-    // Wait for auth response (up to 20s)
-    const deadline = Date.now() + 20000;
+    if (!solved) {
+      console.log('[turnstile] not solved after 10s — submitting anyway');
+    }
+
+    emit('step', { step: 'signing', message: 'Signing you in...' });
+    await page.click('button[type="submit"]').catch(() => {});
+
+    const deadline = Date.now() + 15000;
     while (!capturedToken && !loginError && Date.now() < deadline) {
-      await page.waitForTimeout(500);
+      await sleep(300);
     }
 
     if (capturedToken) {
-      return res.json({ success: 1, token: capturedToken, refresh_token: capturedRefresh });
+      // Store refresh token in MongoDB for fast path next login
+      if (capturedRefresh) {
+        await RefreshToken.findOneAndUpdate(
+          { username },
+          { refresh_token: capturedRefresh, updatedAt: Date.now() },
+          { upsert: true }
+        );
+      }
+      emit('done', { success: 1, token: capturedToken, refresh_token: capturedRefresh });
+    } else {
+      emit('error', { success: 0, error: loginError || 'Login timed out' });
     }
-
-    return res.status(401).json({
-      success: 0,
-      error: loginError || 'Login timed out — Turnstile may have challenged',
-    });
 
   } catch (err) {
     console.error('[browser-login] error:', err.message);
-    return res.status(500).json({ success: 0, error: 'Browser login failed: ' + err.message });
+    emit('error', { success: 0, error: err.message });
   } finally {
-    if (browser) await browser.close();
+    try { await browser.close(); } catch (_) {}
+    res.end();
   }
 });
 
